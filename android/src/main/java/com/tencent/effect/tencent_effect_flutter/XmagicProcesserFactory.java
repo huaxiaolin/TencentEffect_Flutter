@@ -52,6 +52,7 @@ public class XmagicProcesserFactory implements ITXCustomBeautyProcesserFactory {
         }
 
         void destroy() {
+            XmagicApiManager.getInstance().cleanPendingData();
             XmagicApiManager.getInstance().onDestroy();
         }
 

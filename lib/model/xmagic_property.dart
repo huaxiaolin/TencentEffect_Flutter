@@ -1,6 +1,5 @@
-import 'dart:convert';
-import 'package:tencent_effect_flutter/utils/Logs.dart';
-import 'package:tencent_effect_flutter/utils/xmagic_decode_utils.dart';
+import '../utils/Logs.dart';
+import '../utils/xmagic_decode_utils.dart';
 
 @deprecated
 class XmagicProperty {

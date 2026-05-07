@@ -1,15 +1,15 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:tencent_effect_flutter/api/android/tencent_effect_api_android.dart';
-import 'package:tencent_effect_flutter/model/xmagic_property.dart';
-
+import '../model/xmagic_property.dart';
+import 'android/tencent_effect_api_android.dart';
 import 'ios/tencent_effect_api_ios.dart';
 
 
 abstract class TencentEffectApi {
   static TencentEffectApi? _api;
 
-  TencentEffectApi._internal();
+  TencentEffectApi();
+
 
   static TencentEffectApi? getApi() {
     if (_api != null) {
@@ -30,6 +30,9 @@ abstract class TencentEffectApi {
   /// Before version 0.3.1.0, this method must be called before using the beauty feature.
   /// Starting from version 0.3.5.0, this method only needs to be called once per version, and the setResourcePath method must be called before this method to set the resource path. The previous xmagicResDir parameter has been removed.
   void initXmagic(InitXmagicCallBack callBack);
+
+
+  void setXmagicApiCreatedListener(XmagicApiCreatedListener? createListener);
 
   ///check auth
   void setLicense(String licenseKey, String licenseUrl, LicenseCheckListener checkListener);
@@ -65,6 +68,9 @@ abstract class TencentEffectApi {
   void setImageOrientation(TEImageOrientation orientation);
 
 
+  void setBeautyProcessPaused(bool paused);
+
+
   @deprecated
   void updateProperty(XmagicProperty property);
 
@@ -81,6 +87,11 @@ abstract class TencentEffectApi {
 
 
   void setAIDataListener(XmagicAIDataListener? aiDataListener);
+
+  ///开启或关闭美颜，只有美颜和 tencent_rtc_sdk 库进行结合使用的时候才能使用这个方法来开启或关闭美颜
+  Future<int> enableBeauty(bool enable);
+
+  void setSyncMode(bool isSync , int syncFrameCount);
 
   @deprecated
   Future<List<XmagicProperty>> isBeautyAuthorized(List<XmagicProperty> properties);
@@ -108,6 +119,8 @@ typedef LicenseCheckListener = void Function(int errorCode, String msg);
 typedef OnCreateXmagicApiErrorListener = void Function(String errorMsg, int code);
 
 typedef XmagicYTDataListener = void Function(String data);
+
+typedef XmagicApiCreatedListener = void Function(int data);
 
 typedef InitXmagicCallBack = void Function(bool reslut);
 

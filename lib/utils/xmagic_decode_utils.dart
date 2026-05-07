@@ -1,11 +1,11 @@
 
 
 import 'dart:convert';
-import 'package:tencent_effect_flutter/model/xmagic_property.dart';
+import '../model/xmagic_property.dart';
 
 
 
-
+@deprecated
 class XmagicDecodeUtil{
 
 
