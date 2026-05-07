@@ -7,8 +7,11 @@ dependency_overrides:
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
+TencentEffect:
+  te_sub_spec: 'S1-07'
+
 environment:
-  sdk : ">=2.16.2 <4.0.0"
+  sdk: ">=2.17.0 <3.0.0"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -24,9 +27,9 @@ dependencies:
   fluttertoast: 8.2.12
   crypto: ^3.0.1
   path_provider: ^2.0.1
-  image_picker: 1.1.0
 
-  shared_preferences: 2.4.0
+
+
   package_info_plus: 8.3.0
   flutter_localizations: # Add this line
     sdk: flutter         # Add this line
@@ -34,10 +37,12 @@ dependencies:
 
   tencent_effect_flutter:
     path: ..
+#  tencent_effect_uikit:
+#    path: ../TencentEffect_UIKit
 #  tencent_effect_flutter_kit:
 #    path: .._kit
-  live_flutter_plugin: 12.5.0
-  tencent_trtc_cloud: 3.0.3
+  live_flutter_plugin: 12.6.1
+  tencent_trtc_cloud: 3.0.4
   cupertino_icons: ^1.0.2
   sensors_plus: ^6.1.1
 
@@ -76,6 +81,7 @@ flutter:
     - assets/beauty_panel/panel_icon/beauty/liti/
     - assets/beauty_panel/panel_icon/beauty/saihong/
     - assets/beauty_panel/panel_icon/beauty_body/
+    - assets/beauty_panel/panel_icon/beauty_template/
     - assets/beauty_panel/panel_icon/lut_icon/
     - assets/beauty_panel/panel_icon/light_makeup_icon/
     - assets/beauty_panel/panel_icon/motions_icon/

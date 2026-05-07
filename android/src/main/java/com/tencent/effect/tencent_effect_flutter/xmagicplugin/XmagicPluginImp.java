@@ -95,6 +95,11 @@ public class XmagicPluginImp implements XmagicPlugin {
             public void onYTDataUpdate(String data) {
                 sendStringData("onYTDataUpdate", data);
             }
+
+            @Override
+            public void onXmagicApiCreated() {
+                sendStringData("onXmagicApiCreated", "1");
+            }
         });
     }
 
@@ -544,6 +549,56 @@ public class XmagicPluginImp implements XmagicPlugin {
             resultParameterError(call.method, result);
         }
     }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public void setSyncMode(@NonNull MethodCall call, @NonNull MethodChannel.Result result) {
+        if (call.arguments instanceof Map) {
+            Map<String, Object> param = (Map<String, Object>) call.arguments;
+            try {
+                boolean isSync = false;
+                int syncFrameCount = 0;
+                Object tempIsSync = param.get("isSync");
+                if (tempIsSync instanceof Boolean) {
+                    isSync = (boolean) tempIsSync;
+                }
+                Object tempSyncFrameCount = param.get("syncFrameCount");
+                if (tempSyncFrameCount instanceof Integer) {
+                    syncFrameCount = (int) tempSyncFrameCount;
+                }
+                XmagicApiManager.getInstance().setSyncMode(isSync, syncFrameCount);
+                result.success(null);
+                return;
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        resultParameterError(call.method, result);
+    }
+
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public void setBeautyProcessPaused(@NonNull MethodCall call, @NonNull MethodChannel.Result result) {
+        if (call.arguments instanceof Map) {
+            Map<String, Object> param = (Map<String, Object>) call.arguments;
+            try {
+                boolean isBeautyProcessPaused = false;
+                Object beautyProcessPaused = param.get("beautyProcessPaused");
+                if (beautyProcessPaused instanceof Boolean) {
+                    isBeautyProcessPaused = (boolean) beautyProcessPaused;
+                }
+                XmagicApiManager.getInstance().setBeautyProcessPaused(isBeautyProcessPaused);
+                result.success(null);
+                return;
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        resultParameterError(call.method, result);
+    }
+
+
 
 
     private void sendBoolData(String methodName, boolean data) {

@@ -8,22 +8,21 @@ import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:tencent_effect_flutter/api/tencent_effect_api.dart';
 import 'package:tencent_effect_flutter/model/xmagic_property.dart';
+import 'package:tencent_effect_flutter/uikit/config/te_res_config.dart';
+import 'package:tencent_effect_flutter/uikit/model/te_ui_property.dart';
+import 'package:tencent_effect_flutter/uikit/producer/te_general_data_producer.dart';
+import 'package:tencent_effect_flutter/uikit/producer/te_panel_data_producer.dart';
+import 'package:tencent_effect_flutter/uikit/view/te_beauty_panel_view.dart';
 import 'package:tencent_effect_flutter/utils/Logs.dart';
+import 'package:tencent_effect_flutter_demo/page/param_local_manager.dart';
 import 'package:tencent_trtc_cloud/trtc_cloud_video_view.dart';
 import 'package:tencent_trtc_cloud/trtc_cloud.dart';
-import 'package:tencent_trtc_cloud/tx_device_manager.dart';
-import 'package:tencent_trtc_cloud/tx_audio_effect_manager.dart';
 import 'package:tencent_trtc_cloud/trtc_cloud_def.dart';
 import '../../utils/tool.dart';
 import '../config/te_app_config.dart';
-import '../config/te_res_config.dart';
-import '../manager/beauty_param_manager.dart';
-import '../model/te_ui_property.dart';
-import '../producer/te_general_data_producer.dart';
-import '../producer/te_panel_data_producer.dart';
 import '../utils/TEDeviceOrientation.dart';
-import '../view/beauty_panel_view.dart';
-import 'default_panel_view_callback.dart';
+import '../view/common_dialog.dart';
+import 'demo_panel_view_callback.dart';
 
 /// Meeting Page
 class TRTCPage extends StatefulWidget {
@@ -58,9 +57,12 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
   bool _isOpenBeauty = true;
   late TEDeviceOrientation _deviceOrientation;
 
-  final DefaultPanelViewCallBack beautyPanelViewCallBack = DefaultPanelViewCallBack();
+  final DemoPanelViewCallBack beautyPanelViewCallBack =
+      DemoPanelViewCallBack();
 
   late TEPanelDataProducer panelDataProducer;
+
+  List<TESDKParam>? lastSdkParam;
 
   @override
   initState() {
@@ -73,11 +75,11 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
     listenerOrientation();
   }
 
-
   Future<void> _initBeautyParams() async {
     panelDataProducer = TEGeneralDataProducer();
-    panelDataProducer.setPanelDataList(TEResConfig.getConfig().defaultPanelDataList);
-    List<TESDKParam>? sdkParams = await BeautyParamManager.getBeautyParam();
+    panelDataProducer
+        .setPanelDataList(TEResConfig.getConfig().defaultPanelDataList);
+    List<TESDKParam>? sdkParams = await ParamLocalManager.getBeautyParam();
     if (sdkParams != null) {
       panelDataProducer.setUsedParams(sdkParams);
     }
@@ -87,8 +89,7 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
     // Create TRTCCloud singleton
     trtcCloud = (await TRTCCloud.sharedInstance())!;
     initData();
-    enableBeauty(_isOpenBeauty);
-
+    await enableBeauty(_isOpenBeauty);
   }
 
   TEImageOrientation getTEImageOrientationByDeviceDirection(
@@ -131,7 +132,8 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
     _deviceOrientation.start((TEDeviceDirection direction) {
       if (!mounted) return;
       if (_isOpenBeauty) {
-        TencentEffectApi.getApi()?.setImageOrientation(getTEImageOrientationByDeviceDirection(direction));
+        TencentEffectApi.getApi()?.setImageOrientation(
+            getTEImageOrientationByDeviceDirection(direction));
       }
     });
   }
@@ -139,13 +141,13 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
   void _setBeautyListener() {
     TencentEffectApi.getApi()
         ?.setOnCreateXmagicApiErrorListener((errorMsg, code) {
-      TXLog.printlog(
+      debugPrint(
           "$TAG method is _setBeautyListener, errorMsg = $errorMsg , code = $code");
     });
 
     TencentEffectApi.getApi()?.setAIDataListener(XmagicAIDataListenerImp());
     TencentEffectApi.getApi()?.setYTDataListener((data) {
-      TXLog.printlog("$TAG method is setYTDataListener ,result data: $data");
+      debugPrint("$TAG method is setYTDataListener ,result data: $data");
     });
     TencentEffectApi.getApi()?.setTipsListener(XmagicTipsListenerImp());
   }
@@ -158,21 +160,21 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
     TencentEffectApi.getApi()?.setTipsListener(null);
   }
 
-
   ///true is turn on,false is turn off
   Future<int?> enableBeauty(bool open) async {
     if (!open) {
       //获取当前设置的美颜属性
       //Get the currently set beauty parameters
-      List<TESDKParam> lastSdkParam = beautyPanelViewCallBack.getUsedParams();
+      lastSdkParam = beautyPanelViewCallBack.getUsedParams();
       //将美颜属性保存在本地磁盘，下次进入的时候设置给面板
       //Save beauty parameters to local disk and set them to the panel next time you enter
-      BeautyParamManager.saveBeautyParam(lastSdkParam);
+      if (lastSdkParam != null) {
+        ParamLocalManager.saveBeautyParam(lastSdkParam!);
+      }
     } else {
       TencentEffectApi.getApi()!.setEffectMode(TeAppConfig.instance.effectMode);
     }
     int? result = await trtcCloud.enableCustomVideoProcess(open);
-    beautyPanelViewCallBack.setEnableEffect(open);
     return result;
   }
 
@@ -194,8 +196,6 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
         break;
     }
   }
-
-
 
   initData() async {
     if (isOpenCamera) {
@@ -240,7 +240,6 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
-
   Future<bool?> showErrorDialog(errorMsg) {
     return showDialog<bool>(
       context: context,
@@ -261,26 +260,16 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
   }
 
   Future<bool?> showExitMeetingConfirmDialog() {
-    return showDialog<bool>(
+    return CommonDialog.show(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text("Tips"),
-          content: const Text("Are you sure to exit the meeting?"),
-          actions: <Widget>[
-            TextButton(
-              child: const Text("Cancel"),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            TextButton(
-              child: const Text("Confirm"),
-              onPressed: () async {
-                Navigator.of(context).pop();
-                await _onBackPress(true);
-              },
-            ),
-          ],
-        );
+      title: "Tips",
+      content: "Are you sure to exit the meeting?",
+      leftText: "Cancel",
+      rightText: "Confirm",
+      onLeftPress: () => Navigator.of(context).pop(),
+      onRightPress: () async {
+        Navigator.of(context).pop();
+        await _onBackPress(true);
       },
     );
   }
@@ -348,6 +337,14 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
                       setState(() {
                         _isOpenBeauty = value;
                       });
+                      if (value) {
+                        TencentEffectApi.getApi()!.setXmagicApiCreatedListener((data) async {
+                          TencentEffectApi.getApi()!.setXmagicApiCreatedListener(null);
+                          if (lastSdkParam != null && lastSdkParam!.isNotEmpty) {
+                            beautyPanelViewCallBack.onUpdateEffectList(lastSdkParam!);
+                          }
+                        });
+                      }
                       enableBeauty(value);
                     },
                   ),
@@ -379,8 +376,11 @@ class TRTCPageState extends State<TRTCPage> with WidgetsBindingObserver {
           direction: Axis.horizontal,
           children: [
             Expanded(
-              child: BeautyPanelView(beautyPanelViewCallBack, panelDataProducer,
-                  key: beautyPanelViewCallBack.globalKey),
+              child: TEBeautyPanelView(
+                beautyPanelViewCallBack,
+                panelDataProducer,
+                beautyPanelViewCallBack.panelController,
+              ),
             )
           ],
         ));
@@ -483,11 +483,11 @@ class XmagicAIDataListenerImp extends XmagicAIDataListener {
       if (result.isNotEmpty) {
         var points = result[0]['points'];
         if (points is List && points.isNotEmpty) {
-          TXLog.printlog("onBodyDataUpdated = ${points.length}");
+          debugPrint("onBodyDataUpdated = ${points.length}");
         }
       }
     }
-    TXLog.printlog("onBodyDataUpdated = $bodyDataList   ");
+    debugPrint("onBodyDataUpdated = $bodyDataList   ");
   }
 
   @override
@@ -497,11 +497,11 @@ class XmagicAIDataListenerImp extends XmagicAIDataListener {
       if (result.isNotEmpty) {
         var points = result[0]['points'];
         if (points is List && points.isNotEmpty) {
-          TXLog.printlog("onFaceDataUpdated = ${points.length}");
+          debugPrint("onFaceDataUpdated = ${points.length}");
         }
       }
     }
-    TXLog.printlog("onFaceDataUpdated = $faceDataList   ");
+    debugPrint("onFaceDataUpdated = $faceDataList   ");
   }
 
   @override
@@ -511,18 +511,18 @@ class XmagicAIDataListenerImp extends XmagicAIDataListener {
       if (result.isNotEmpty) {
         var points = result[0]['points'];
         if (points is List && points.isNotEmpty) {
-          TXLog.printlog("onHandDataUpdated = ${points.length}");
+          debugPrint("onHandDataUpdated = ${points.length}");
         }
       }
     }
-    TXLog.printlog("onHandDataUpdated = $handDataList   ");
+    debugPrint("onHandDataUpdated = $handDataList   ");
   }
 }
 
 class XmagicTipsListenerImp extends XmagicTipsListener {
   @override
   void tipsNeedHide(String tips, String tipsIcon, int type) {
-    TXLog.printlog("tipsNeedHide = $tips   ");
+    debugPrint("tipsNeedHide = $tips   ");
   }
 
   @override

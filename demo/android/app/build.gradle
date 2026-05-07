@@ -44,5 +44,5 @@ flutter {
 }
 
 dependencies {
-    implementation 'com.tencent.mediacloud:TencentEffect_S1-07:4.1.0.6'
+
 }

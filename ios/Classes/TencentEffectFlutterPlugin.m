@@ -11,7 +11,9 @@
 @interface TencentEffectFlutterPlugin() <FlutterStreamHandler>
  
 @property (nonatomic, strong) FlutterEventSink eventSink;
-
+@property (nonatomic, assign) BOOL enableAIDataListener;
+@property (nonatomic, assign) BOOL enableTipsListener;
+@property (nonatomic, assign) BOOL enableYTDataListener;
  
 @end
 
@@ -46,13 +48,22 @@ static TencentEffectFlutterPlugin* _instance = nil;
 
 }
 
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        // 在构造函数初始化时，直接调用设置回调的方法
+        [self setDataCallBack];
+    }
+    return self;
+}
+
 - (void)handleMethodCall:(FlutterMethodCall*)call result:(FlutterResult)result {
   if ([@"getPlatformVersion" isEqualToString:call.method]) {
     result([@"iOS " stringByAppendingString:[[UIDevice currentDevice] systemVersion]]);
   }else if ([@"initXmagic" isEqualToString:call.method]) {
       result(nil);
       [self initXmagic];
-      [self setDataCallBack];
   }else if ([@"isSupportBeauty" isEqualToString:call.method]) {
       result(@true);
   }else if ([@"setLicense" isEqualToString:call.method]) {
@@ -123,6 +134,30 @@ static TencentEffectFlutterPlugin* _instance = nil;
   }else if ([@"setEffect" isEqualToString:call.method]) {
       [[XmagicApiManager shareSingleton] setEffect:call.arguments];
       result(nil);
+  }else if ([@"enableAIDataListener" isEqualToString:call.method]) {
+      self.enableAIDataListener = [call.arguments boolValue];
+      result(nil);
+  }else if ([@"enableTipsListener" isEqualToString:call.method]) {
+      self.enableTipsListener = [call.arguments boolValue];
+      result(nil);
+  }else if ([@"enableYTDataListener" isEqualToString:call.method]) {
+      self.enableYTDataListener = [call.arguments boolValue];
+      result(nil);
+  }else if ([@"setSyncMode" isEqualToString:call.method]) {
+      if ([call.arguments isKindOfClass:[NSDictionary class]]) {
+          NSDictionary *params = (NSDictionary *)call.arguments;
+          BOOL isSync = [params[@"isSync"] boolValue];
+          int syncFrameCount = [params[@"syncFrameCount"] intValue];
+          [[XmagicApiManager shareSingleton] setSyncMode:isSync syncFrameCount:syncFrameCount];
+      }
+      result(nil);
+  }else if ([@"setBeautyProcessPaused" isEqualToString:call.method]) {
+      if ([call.arguments isKindOfClass:[NSDictionary class]]) {
+          NSDictionary *params = (NSDictionary *)call.arguments;
+          BOOL beautyProcessPaused = [params[@"beautyProcessPaused"] boolValue];
+          [[XmagicApiManager shareSingleton] setBeautyProcessPaused:beautyProcessPaused];
+      }
+      result(nil);
   }else {
     result(FlutterMethodNotImplemented);
   }
@@ -138,7 +173,8 @@ static TencentEffectFlutterPlugin* _instance = nil;
 
 -(void)setLicense:(NSString *)licenseKey licenseUrl:(NSString *)licenseUrl{
     [[XmagicApiManager shareSingleton] setLicense:licenseKey licenseUrl:licenseUrl completion:^(NSInteger authresult, NSString * _Nonnull errorMsg) {
-        NSDictionary *result = @{@"methodName":@"onLicenseCheckFinish", @"code":@(authresult),@"msg":errorMsg};
+        NSDictionary *data = @{@"code":@(authresult), @"msg":errorMsg};
+        NSDictionary *result = @{@"methodName":@"onLicenseCheckFinish", @"data":data};
         [self eventSinkData:result];
     }];
 }
@@ -165,6 +201,9 @@ static TencentEffectFlutterPlugin* _instance = nil;
 
 -(void)setDataCallBack{
     [XmagicApiManager shareSingleton].eventAICallBlock = ^(id  _Nonnull event) {
+        if (!self.enableAIDataListener) {
+            return;
+        }
         NSDictionary *eventDict = (NSDictionary *)event;
         NSDictionary *result;
         if (eventDict != nil && [eventDict isKindOfClass:[NSDictionary class]]) {
@@ -183,6 +222,9 @@ static TencentEffectFlutterPlugin* _instance = nil;
         }
     };
     [XmagicApiManager shareSingleton].eventTipsCallBlock = ^(id  _Nonnull event) {
+        if (!self.enableTipsListener) {
+            return;
+        }
         NSDictionary *eventDict = (NSDictionary *)event;
         NSDictionary *result;
         int timeCount = eventDict[@"duration"]==nil?3:([eventDict[@"duration"] intValue]/1000);
@@ -194,12 +236,23 @@ static TencentEffectFlutterPlugin* _instance = nil;
         [self eventSinkData:result];
     };
     [XmagicApiManager shareSingleton].eventYTDataCallBlock = ^(id  _Nonnull event) {
+        if (!self.enableYTDataListener) {
+            return;
+        }
         NSDictionary *eventDict = (NSDictionary *)event;
         if(eventDict !=nil && [eventDict isKindOfClass:[NSDictionary class]]){
             NSDictionary *result = @{@"methodName":@"onYTDataUpdate", @"data":[self mapToString:eventDict]};
             [self eventSinkData:result];
         }
     };
+    
+    [XmagicApiManager shareSingleton].xmagicApiCreatedListener = ^{
+        NSMutableDictionary *result = [NSMutableDictionary dictionary];
+        [result setValue:@"onXmagicApiCreated" forKey:@"methodName"];
+        [result setValue:@"1" forKey:@"data"];
+        [self eventSinkData:result];
+    };
+    
 }
 
 -(NSDictionary *)stringToMap:(NSString *)string{

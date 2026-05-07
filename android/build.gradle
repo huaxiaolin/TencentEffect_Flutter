@@ -30,6 +30,47 @@ rootProject.allprojects {
 
 apply plugin: 'com.android.library'
 
+
+import java.util.regex.Pattern
+
+def getSubSpecFromPubspec() {
+    def allowedVersions = ['A1-00', 'A1-01', 'A1-02', 'A1-03', 'A1-04', 'A1-05', 'A1-06',
+                           'S1-00', 'S1-01', 'S1-02', 'S1-03', 'S1-04', 'S1-05', 'S1-06', 'S1-07']
+
+    // rootProject.projectDir 通常是 [HostApp]/android/
+    def hostProjectRoot = rootProject.projectDir.parentFile
+    def pubspecFile = new File(hostProjectRoot, "pubspec.yaml")
+
+    println("[TencentEffect] Target Host Pubspec: ${pubspecFile.absolutePath}")
+
+    if (pubspecFile.exists()) {
+        def content = pubspecFile.text
+        def pattern = Pattern.compile("TencentEffect:\\s*\\n\\s*te_sub_spec:\\s*['\"]?([\\w-]+)['\"]?")
+        def matcher = pattern.matcher(content)
+
+        if (matcher.find()) {
+            def result = matcher.group(1)
+            println("[TencentEffect] get sub_specResult: ${result}")
+            if (result in allowedVersions) {
+                println("[TencentEffect] valid subSpecVersion: ${result}")
+                return result
+            } else {
+                println("[TencentEffect] warning: invalid subSpecVersion '${result}', allowed: ${allowedVersions.join(', ')}")
+                println("[TencentEffect] fallback to default: S1-07")
+                return "S1-07"
+            }
+        } else {
+            println("[TencentEffect] sub_spec not found\n: ${content}")
+        }
+    } else {
+        println("[TencentEffect] pubspecFile not exists: ${pubspecFile}")
+    }
+    return "S1-07"
+}
+
+def subSpecVersion = getSubSpecFromPubspec()
+
+
 android {
     if (project.android.hasProperty("namespace")) {
         namespace 'com.tencent.effect.tencent_effect_flutter'
@@ -61,12 +102,13 @@ android {
 //    }
     dependencies {
         compileOnly 'com.tencent.liteav:custom-video-processor:latest.release'  //与直播间里关系的公共库
-        compileOnly 'com.google.code.gson:gson:2.8.6'
+        compileOnly 'com.google.code.gson:gson:2.8.5'
         compileOnly fileTree(dir: "libs", include: ['*.jar'])
         compileOnly fileTree(dir: "libs", include: ['*.aar'])
 //        compileOnly files("$flutterRoot/bin/cache/artifacts/engine/android-arm/flutter.jar")
         compileOnly 'androidx.annotation:annotation:1.1.0'
-        compileOnly 'com.tencent.mediacloud:TencentEffect_S1-07:4.1.0.6'
+
+        implementation "com.tencent.mediacloud:TencentEffect_${subSpecVersion}:4.2.0.11"
     }
 
 

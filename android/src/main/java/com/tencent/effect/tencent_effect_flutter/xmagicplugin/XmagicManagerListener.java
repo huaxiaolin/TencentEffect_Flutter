@@ -65,4 +65,6 @@ public interface XmagicManagerListener {
      * @param data String in JSON format.
      */
     void onYTDataUpdate(String data);
+
+    void onXmagicApiCreated();
 }

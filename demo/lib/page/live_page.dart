@@ -9,13 +9,12 @@ import 'package:live_flutter_plugin/v2_tx_live_def.dart';
 import 'package:live_flutter_plugin/v2_tx_live_pusher.dart';
 import 'package:live_flutter_plugin/widget/v2_tx_live_video_widget.dart';
 import 'package:tencent_effect_flutter/api/tencent_effect_api.dart';
+import 'package:tencent_effect_flutter/uikit/manager/te_res_path_manager.dart';
+import 'package:tencent_effect_flutter/uikit/view/te_beauty_panel_view.dart';
 import 'package:tencent_effect_flutter/utils/Logs.dart';
-import 'package:tencent_effect_flutter_demo/manager/res_path_manager.dart';
 import '../../languages/AppLocalizations.dart';
 import '../config/te_app_config.dart';
-import '../view/beauty_panel_view.dart';
-import 'default_panel_view_callback.dart';
-
+import 'demo_panel_view_callback.dart';
 
 /// Live-Camera page
 class LivePage extends StatefulWidget {
@@ -30,24 +29,19 @@ class LivePage extends StatefulWidget {
 class _LivePageState extends State<LivePage> with WidgetsBindingObserver {
   static const String TAG = "LiveCameraPushPage";
 
-
   /// Resolution
   V2TXLiveVideoResolution _resolution =
       V2TXLiveVideoResolution.v2TXLiveVideoResolution1280x720;
 
-
   /// Rotation angle
   V2TXLiveRotation _liveRotation = V2TXLiveRotation.v2TXLiveRotation0;
-
 
   /// Camera
   V2TXLiveMirrorType _liveMirrorType =
       V2TXLiveMirrorType.v2TXLiveMirrorTypeAuto;
 
-
   /// Audio settings
   TXDeviceManager? _txDeviceManager;
-
 
   /// Audio data
   int? _localViewId;
@@ -59,8 +53,8 @@ class _LivePageState extends State<LivePage> with WidgetsBindingObserver {
 
   bool _isShowSettingView = false;
 
-  final DefaultPanelViewCallBack beautyPanelViewCallBack =
-      DefaultPanelViewCallBack();
+  final DemoPanelViewCallBack beautyPanelViewCallBack =
+      DemoPanelViewCallBack();
 
   @override
   void initState() {
@@ -113,7 +107,6 @@ class _LivePageState extends State<LivePage> with WidgetsBindingObserver {
         V2TXLiveVideoResolutionMode.v2TXLiveVideoResolutionModePortrait;
     await _livePusher?.setVideoQuality(videoEncoderParam);
 
-
     ///Set default sharpness
     await _livePusher
         ?.setAudioQuality(V2TXLiveAudioQuality.v2TXLiveAudioQualityDefault);
@@ -139,7 +132,6 @@ class _LivePageState extends State<LivePage> with WidgetsBindingObserver {
     // });
     enableBeauty(_isOpenBeauty);
   }
-
 
   ///switch camera
   void _switchCamera() async {
@@ -168,7 +160,6 @@ class _LivePageState extends State<LivePage> with WidgetsBindingObserver {
     TencentEffectApi.getApi()?.setTipsListener(null);
   }
 
-
   ///true is turn on,false is turn off
   Future<int?> enableBeauty(bool open) async {
     if (open) {
@@ -178,10 +169,8 @@ class _LivePageState extends State<LivePage> with WidgetsBindingObserver {
       _removeBeautyListener();
     }
 
-
     ///Turn on /off
     int? result = await _livePusher?.enableCustomVideoProcess(open);
-    beautyPanelViewCallBack.setEnableEffect(open);
     return result;
   }
 
@@ -233,7 +222,6 @@ class _LivePageState extends State<LivePage> with WidgetsBindingObserver {
       },
     );
   }
-
 
   Future<bool?> showErrorDialog(errorMsg) {
     return showDialog<bool>(
@@ -404,16 +392,19 @@ class _LivePageState extends State<LivePage> with WidgetsBindingObserver {
   ///create beauty panel view
   Widget buildPanelView() {
     return Align(
+        alignment: Alignment.bottomCenter,
         child: Flex(
           direction: Axis.horizontal,
           children: [
             Expanded(
-              child: BeautyPanelView(beautyPanelViewCallBack, null,
-                  key: beautyPanelViewCallBack.globalKey),
+              child: TEBeautyPanelView(
+                beautyPanelViewCallBack,
+                null,
+                beautyPanelViewCallBack.panelController,
+              ),
             )
           ],
-        ),
-        alignment: Alignment.bottomCenter);
+        ));
   }
 
   @override
@@ -424,15 +415,13 @@ class _LivePageState extends State<LivePage> with WidgetsBindingObserver {
       case AppLifecycleState.resumed: //
         TencentEffectApi.getApi()?.onResume();
         break;
-      case AppLifecycleState.paused: // 
+      case AppLifecycleState.paused: //
         TencentEffectApi.getApi()?.onPause();
         break;
-      case AppLifecycleState.detached: // 
+      case AppLifecycleState.detached: //
         break;
     }
   }
-
-
 
   void onGetDeviceAbilities() async {
     Map<String, bool>? deviceAbilities =
@@ -452,15 +441,13 @@ class _LivePageState extends State<LivePage> with WidgetsBindingObserver {
     showTipDialog(" this device is support beauty : $isSupport");
   }
 
-
   void onCheckDeviceSupport() async {
-
-    String resPath = "${await ResPathManager.getResManager().getMotion2dDir()}video_diejia_dogmask";
-    bool? isSupport= await TencentEffectApi.getApi()?.isDeviceSupportMotion(resPath);
+    String resPath =
+        "${await TEResPathManager.getResManager().getMotion2dDir()}video_diejia_dogmask";
+    bool? isSupport =
+        await TencentEffectApi.getApi()?.isDeviceSupportMotion(resPath);
     showTipDialog("resPath is ：$resPath, check result = $isSupport");
   }
-
-
 
   void showTipDialog(String resultMsg) {
     showDialog<void>(

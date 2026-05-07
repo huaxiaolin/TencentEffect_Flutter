@@ -69,5 +69,8 @@ public interface XmagicPlugin {
     void enableYTDataListener(@NonNull MethodCall call, @NonNull MethodChannel.Result result);
     void enableTipsListener(@NonNull MethodCall call, @NonNull MethodChannel.Result result);
 
+    void setSyncMode(@NonNull MethodCall call, @NonNull MethodChannel.Result result);
+
+    void setBeautyProcessPaused(@NonNull MethodCall call, @NonNull MethodChannel.Result result);
 
 }

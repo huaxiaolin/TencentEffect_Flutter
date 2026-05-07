@@ -11,11 +11,12 @@
 @implementation XmagicProcesserFactory
 
 - (id<ITXCustomBeautyProcesser> _Nonnull)createCustomBeautyProcesser {
-    [[XmagicApiManager shareSingleton] onDestroy]; 
+//    [[XmagicApiManager shareSingleton] onDestroy];
     return self;
 }
 
 - (void)destroyCustomBeautyProcesser {
+    [[XmagicApiManager shareSingleton] cleanPendingData];
     [[XmagicApiManager shareSingleton] onDestroy];
 }
 

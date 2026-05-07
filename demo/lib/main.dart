@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -5,14 +7,15 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tencent_effect_flutter/api/tencent_effect_api.dart';
+import 'package:tencent_effect_flutter/uikit/config/te_res_config.dart';
+import 'package:tencent_effect_flutter/uikit/l10n/te_panel_localizations.dart';
+import 'package:tencent_effect_flutter/uikit/manager/te_res_path_manager.dart';
 import 'package:tencent_effect_flutter/utils/Logs.dart';
 import 'package:tencent_effect_flutter_demo/config/te_app_config.dart';
 import 'package:tencent_effect_flutter_demo/languages/app_localization_delegate.dart';
-import 'package:tencent_effect_flutter_demo/manager/res_path_manager.dart';
 import 'package:tencent_effect_flutter_demo/page/live_page.dart';
 import 'package:tencent_effect_flutter_demo/page/trtc_page.dart';
 import 'package:tencent_effect_flutter_demo/view/progress_dialog.dart';
-import 'config/te_res_config.dart';
 import 'languages/AppLocalizations.dart';
 
 const String licenseUrl =
@@ -33,7 +36,8 @@ class MyApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
           GlobalMaterialLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
-          APPLocalizationDelegate.delegate
+          APPLocalizationDelegate.delegate,
+          TEPanelLocalizations.delegate
         ],
         supportedLocales: const [
           Locale.fromSubtags(languageCode: 'en'),
@@ -159,7 +163,7 @@ class _HomeState extends State<HomePage> {
   }
 
   void _initSettings(InitXmagicCallBack callBack) async {
-    String resourceDir = await ResPathManager.getResManager().getResPath();
+    String resourceDir = await TEResPathManager.getResManager().getResPath();
     TXLog.printlog('$TAG method is _initResource ,xmagic resource dir is $resourceDir');
     TencentEffectApi.getApi()?.setResourcePath(resourceDir);
 
@@ -245,13 +249,22 @@ class _HomeState extends State<HomePage> {
   }
 
   void initPanelViewConfig() {
+    TEResConfig.getConfig().defaultPanelDataList.clear();
+    String templateJson = Platform.isAndroid ? "assets/beauty_panel/beauty_template.json":
+    "assets/beauty_panel/beauty_template_ios.json";
     TEResConfig.getConfig()
+      ..setBeautyTemplateRes(templateJson)
       ..setBeautyRes("assets/beauty_panel/beauty.json")
+      ..setBeautyRes("assets/beauty_panel/beauty_image.json")
+      ..setBeautyRes("assets/beauty_panel/beauty_makeup.json")
+      ..setBeautyRes("assets/beauty_panel/beauty_shape.json")
       ..setBeautyBodyRes("assets/beauty_panel/beauty_body.json")
       ..setLutRes("assets/beauty_panel/lut.json")
       ..setLightMakeupRes("assets/beauty_panel/light_makeup.json")
       ..setMakeUpRes("assets/beauty_panel/makeup.json")
-      ..setMotionRes("assets/beauty_panel/motions.json")
+      ..setMotionRes("assets/beauty_panel/motions_2d.json")
+      ..setMotionRes("assets/beauty_panel/motions_3d.json")
+      ..setMotionRes("assets/beauty_panel/motions_gesture.json")
       ..setSegmentationRes("assets/beauty_panel/segmentation.json");
   }
 

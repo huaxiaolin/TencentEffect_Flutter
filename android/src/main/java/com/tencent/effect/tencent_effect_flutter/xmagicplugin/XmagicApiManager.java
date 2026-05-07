@@ -30,6 +30,11 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
+
+import com.tencent.effect.tencent_effect_flutter.xmagicplugin.model.PendingEffect;
+import com.tencent.effect.tencent_effect_flutter.xmagicplugin.model.PendingSyncMode;
 
 
 /**
@@ -62,6 +67,27 @@ public class XmagicApiManager implements SensorEventListener, XmagicAIDataListen
     private volatile boolean enableYTData = false;
 
     private volatile boolean enableTipsListener = false;
+
+    // 缓存待设置的effect数据
+    private final Set<PendingEffect> pendingEffects = new CopyOnWriteArraySet<>();
+
+    // 缓存待设置的syncMode数据
+    private volatile PendingSyncMode pendingSyncMode = null;
+
+    /**
+     * 美颜处理暂停标志位。
+     * 当为 true 时，process() 方法会跳过美颜处理，直接返回原始纹理，用于展示未经美颜处理的原始画面。
+     * 通过 setBeautyProcessPaused() 方法控制：按下对比按钮时设为 true（暂停美颜），松开时设为 false（恢复美颜）。
+     */
+    private boolean isBeautyProcessPaused = false;
+
+    /**
+     * 恢复美颜时需要刷新一帧的标志位。
+     * 当暂停模式结束（isBeautyProcessPaused 从 true 变为 false）后，需要额外执行一次 process 调用来刷新美颜渲染结果，
+     * 避免从原始画面切换回美颜画面时出现画面闪烁或延迟。
+     */
+    private boolean needRefreshOnResume = false;
+
 
     static class ClassHolder {
         static final XmagicApiManager INSTANCE = new XmagicApiManager();
@@ -110,7 +136,7 @@ public class XmagicApiManager implements SensorEventListener, XmagicAIDataListen
     }
 
     public void onCreateApi() {
-        XmagicApi api = new XmagicApi(mApplicationContext, this.effectMode,XmagicResParser.getResPath(), (s, i) -> {
+        XmagicApi api = new XmagicApi(mApplicationContext, this.effectMode, XmagicResParser.getResPath(), (s, i) -> {
             if (managerListener != null) {
                 managerListener.onXmagicPropertyError(s, i);
             }
@@ -125,6 +151,13 @@ public class XmagicApiManager implements SensorEventListener, XmagicAIDataListen
         }
         api.setXmagicLogLevel(xMagicLogLevel);
         xmagicApi = api;
+
+        // API创建后，应用所有缓存的待处理数据
+        applyPendingData(api);
+
+        if (managerListener != null) {
+            managerListener.onXmagicApiCreated();
+        }
     }
 
     public void setXMagicStreamType(int type) {
@@ -185,6 +218,8 @@ public class XmagicApiManager implements SensorEventListener, XmagicAIDataListen
         xmagicApi.setAIDataListener(null);
         xmagicApi.onDestroy();
         xmagicApi = null;
+        isBeautyProcessPaused = false;
+        needRefreshOnResume = false;
     }
 
     @Deprecated
@@ -225,7 +260,9 @@ public class XmagicApiManager implements SensorEventListener, XmagicAIDataListen
 
     public void setEffect(String effectName, int effectValue, String resourcePath, Map<String, String> extraInfo) {
         if (xMagicApiIsNull()) {
-            LogUtils.e(TAG, "setEffect: xmagicApi is null ");
+            LogUtils.d(TAG, "setEffect: xmagicApi is null, caching effect data");
+            // 将effect数据缓存起来
+            pendingEffects.add(new PendingEffect(effectName, effectValue, resourcePath, extraInfo));
             return;
         }
         xmagicApi.setEffect(effectName, effectValue, resourcePath, extraInfo);
@@ -236,9 +273,18 @@ public class XmagicApiManager implements SensorEventListener, XmagicAIDataListen
             LogUtils.e(TAG, "process: xmagicApi is null ");
             return textureId;
         }
+        if (this.isBeautyProcessPaused) {
+            LogUtils.e(TAG, "process: isBeautyProcessPaused is true ");
+            this.needRefreshOnResume = true;
+            return textureId;
+        }
         if (currentStreamType != XmagicApi.PROCESS_TYPE_CAMERA_STREAM) {
             currentStreamType = XmagicApi.PROCESS_TYPE_CAMERA_STREAM;
             setXMagicStreamType(currentStreamType);
+        }
+        if (this.needRefreshOnResume) {
+            this.needRefreshOnResume = false;
+            xmagicApi.process(textureId, width, height);
         }
         return xmagicApi.process(textureId, width, height);
     }
@@ -532,6 +578,53 @@ public class XmagicApiManager implements SensorEventListener, XmagicAIDataListen
     interface InitModelResourceCallBack {
         void onResult(boolean isCopySuccess);
     }
+
+    /**
+     * 应用所有缓存的待处理数据（包括effect、syncMode等）
+     */
+    private void applyPendingData(XmagicApi api) {
+        for (PendingEffect effect : pendingEffects) {
+            api.setEffect(effect.effectName, effect.effectValue, effect.resourcePath, effect.extraInfo);
+            LogUtils.d(TAG, "applyPendingData: applied effect - " + effect.effectName);
+        }
+        pendingEffects.clear();
+
+        PendingSyncMode syncMode = pendingSyncMode;
+        if (syncMode != null) {
+            api.setSyncMode(syncMode.isSync, syncMode.syncFrameCount);
+            pendingSyncMode = null;
+            LogUtils.d(TAG, "applyPendingData: applied syncMode");
+        }
+    }
+
+
+    public void setSyncMode(boolean isSync, int syncFrameCount) {
+        if (xMagicApiIsNull()) {
+            LogUtils.d(TAG, "setSyncMode: xmagicApi is null, caching syncMode data");
+            // 将syncMode数据缓存起来
+            pendingSyncMode = new PendingSyncMode(isSync, syncFrameCount);
+            return;
+        }
+        xmagicApi.setSyncMode(isSync, syncFrameCount);
+    }
+
+
+
+    public void setBeautyProcessPaused(boolean paused) {
+        isBeautyProcessPaused = paused;
+    }
+
+
+    /**
+     * 清空所有缓存的待处理数据（包括effect、syncMode等）
+     */
+    public void cleanPendingData() {
+        pendingEffects.clear();
+        pendingSyncMode = null;
+        isBeautyProcessPaused = false;
+        needRefreshOnResume = false;
+    }
+
 
 
 }

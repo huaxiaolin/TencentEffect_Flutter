@@ -1,0 +1,58 @@
+import 'dart:io';
+
+import 'package:path_provider/path_provider.dart';
+import '../../uikit/manager/te_res_path_manager.dart';
+
+
+class TEResPathManagerAndroid implements TEResPathManager {
+  String? _resPath;
+
+  @override
+  Future<String> getLutDir() async {
+    return "${await getResPath()}${Platform.pathSeparator}light_material${Platform.pathSeparator}lut${Platform.pathSeparator}";
+  }
+
+  @override
+  Future<String> getMakeUpDir() async {
+    return "${await getResPath()}${Platform.pathSeparator}MotionRes${Platform.pathSeparator}makeupRes${Platform.pathSeparator}";
+  }
+
+  @override
+  Future<String> getMotion2dDir() async {
+    return "${await getResPath()}${Platform.pathSeparator}MotionRes${Platform.pathSeparator}2dMotionRes${Platform.pathSeparator}";
+  }
+
+  @override
+  Future<String> getMotion3dDir() async {
+    return "${await getResPath()}${Platform.pathSeparator}MotionRes${Platform.pathSeparator}3dMotionRes${Platform.pathSeparator}";
+  }
+
+  @override
+  Future<String> getMotionGanDir() async {
+    return "${await getResPath()}${Platform.pathSeparator}MotionRes${Platform.pathSeparator}ganMotionRes${Platform.pathSeparator}";
+  }
+
+  @override
+  Future<String> getMotionGestureDir() async {
+    return "${await getResPath()}${Platform.pathSeparator}MotionRes${Platform.pathSeparator}handMotionRes${Platform.pathSeparator}";
+  }
+
+  @override
+  Future<String> getLightMakeupDir() async {
+    return "${await getResPath()}${Platform.pathSeparator}MotionRes${Platform.pathSeparator}light_makeup${Platform.pathSeparator}";
+  }
+
+  @override
+  Future<String> getResPath() async {
+    if (_resPath == null) {
+      Directory directory = await getApplicationSupportDirectory();
+      _resPath = directory.path + Platform.pathSeparator + TEResPathManager.TE_RES_DIR_NAME;
+    }
+    return _resPath!;
+  }
+
+  @override
+  Future<String> getSegDir() async {
+    return "${await getResPath()}${Platform.pathSeparator}MotionRes${Platform.pathSeparator}segmentMotionRes${Platform.pathSeparator}";
+  }
+}

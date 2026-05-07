@@ -37,7 +37,23 @@ static const int MAX_SEG_VIDEO_DURATION = 200 * 1000;
 @property (nonatomic, strong) NSLock  *lock;
 @property (nonatomic, assign) EffectMode effectMode ;
 @property (nonatomic, strong) NSMutableArray<NSDictionary *>*saveEffectList;
-@property (nonatomic, assign) BOOL xmagicInit;
+@property (nonatomic, strong) NSDictionary *pendingSyncMode; // 缓存的syncMode数据
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *processedMediaCache; // 媒体处理结果缓存：原始bgPath -> 处理后的路径（图片和视频共用）
+@property (nonatomic, strong) AVAssetExportSession *currentExportSession; // 当前正在执行的视频转码会话，用于快速调用时取消前一次转码
+
+/**
+ * 美颜处理暂停标志位。
+ * 当为 YES 时，getTextureId: 方法会跳过美颜处理，直接返回原始纹理，用于展示未经美颜处理的原始画面。
+ * 通过 setBeautyProcessPaused: 方法控制：按下对比按钮时设为 YES（暂停美颜），松开时设为 NO（恢复美颜）。
+ */
+@property (nonatomic, assign) BOOL isBeautyProcessPaused;
+
+/**
+ * 恢复美颜时需要刷新一帧的标志位。
+ * 当暂停模式结束（isBeautyProcessPaused 从 YES 变为 NO）后，需要额外执行一次 process 调用来刷新美颜渲染结果，
+ * 避免从原始画面切换回美颜画面时出现画面闪烁或延迟。
+ */
+@property (nonatomic, assign) BOOL needRefreshOnResume;
 
 @end
 
@@ -78,60 +94,58 @@ static XmagicApiManager *shareSingleton = nil;
 -(void)initXmagicRes:(initXmagicResCallback)complete{
     if(self.xmagicResPath.length == 0){
         NSLog(@"error:resPath is invalid");
+        if (complete != nil) {
+            complete(NO);
+        }
         return;
     }
     [self initResName];
-    if (![[NSFileManager  defaultManager] fileExistsAtPath:self.xmagicResPath]){
-        [[NSFileManager  defaultManager] createDirectoryAtPath:self.xmagicResPath withIntermediateDirectories:YES attributes:nil error:NULL];
-    }
-    NSError *error = nil;
-    for (int i = 0; i < _resNames.count; i++) {
-        NSString *bundlePath = [[NSBundle mainBundle] pathForResource:_resNames[i] ofType:@"bundle"];
-        if (bundlePath !=nil) {
-            NSString *path = [NSString stringWithFormat:@"%@/%@.bundle",self.xmagicResPath,_resNames[i]];
-            if([[NSFileManager  defaultManager] fileExistsAtPath:bundlePath]){
-                if ([[NSFileManager  defaultManager] fileExistsAtPath:path]) {
-                    NSError *error = nil;
-                    [[NSFileManager defaultManager] removeItemAtPath:path error:&error];
+    // 在子线程执行资源复制操作，避免阻塞主线程
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        // 创建目标目录（如果不存在）
+        if (![fileManager fileExistsAtPath:self.xmagicResPath]) {
+            [fileManager createDirectoryAtPath:self.xmagicResPath withIntermediateDirectories:YES attributes:nil error:NULL];
+        }
+        BOOL success = YES;
+        for (int i = 0; i < self.resNames.count; i++) {
+            NSString *bundlePath = [[NSBundle mainBundle] pathForResource:self.resNames[i] ofType:@"bundle"];
+            if (bundlePath == nil) {
+                NSLog(@"xmagic init resource warning: bundle path is nil for %@", self.resNames[i]);
+                continue;
+            }
+            NSString *destPath = [NSString stringWithFormat:@"%@/%@.bundle", self.xmagicResPath, self.resNames[i]];
+            // 检查源文件是否存在
+            if (![fileManager fileExistsAtPath:bundlePath]) {
+                NSLog(@"xmagic init resource warning: bundle not found at path %@", bundlePath);
+                continue;
+            }
+            // 如果目标路径已存在，先删除
+            if ([fileManager fileExistsAtPath:destPath]) {
+                NSError *removeError = nil;
+                [fileManager removeItemAtPath:destPath error:&removeError];
+                if (removeError != nil) {
+                    NSLog(@"xmagic init resource warning: failed to remove existing file at %@, error: %@", destPath, removeError.localizedDescription);
                 }
-                [[NSFileManager defaultManager] copyItemAtPath:bundlePath toPath:path error:&error];
-                if (error != nil) {
-                    NSLog(@"xmagic init resource error：%@",error.description);
-                    break;
-                }
-            }else{
-                [self copyItemsFromBundleToSandbox:bundlePath sandboxFolderPath:path];
+            }
+            // 复制 bundle（copyItemAtPath 可以复制目录）
+            NSError *copyError = nil;
+            [fileManager copyItemAtPath:bundlePath toPath:destPath error:&copyError];
+            if (copyError != nil) {
+                NSLog(@"xmagic init resource error: failed to copy %@ to %@, error: %@", bundlePath, destPath, copyError.localizedDescription);
+                success = NO;
+                break;
             }
         }
-
-    }
-    if (complete != nil) {
-        complete(error == nil);
-    }
+        // 回到主线程执行回调
+        if (complete != nil) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                complete(success);
+            });
+        }
+    });
 }
 
--(void)copyItemsFromBundleToSandbox:(NSString *)bundleFolderPath  sandboxFolderPath:(NSString *)sandboxFolderPath {
-    NSFileManager *fileManager = [NSFileManager defaultManager];
-    
-    NSArray *bundleFolderContents = [fileManager contentsOfDirectoryAtPath:bundleFolderPath error:nil];
-    
-    for (NSString *itemName in bundleFolderContents) {
-        NSString *bundleItemFullPath = [bundleFolderPath stringByAppendingPathComponent:itemName];
-        BOOL isDirectory;
-        [fileManager fileExistsAtPath:bundleItemFullPath isDirectory:&isDirectory];
-        
-        NSString *sandboxItemFullPath = [sandboxFolderPath stringByAppendingPathComponent:itemName];
-        if ([[NSFileManager  defaultManager] fileExistsAtPath:sandboxItemFullPath]) {
-            NSError *error = nil;
-            [[NSFileManager defaultManager] removeItemAtPath:sandboxItemFullPath error:&error];
-        }
-        NSError *error;
-        [fileManager copyItemAtPath:bundleItemFullPath toPath:sandboxItemFullPath error:&error];
-        if (error) {
-            NSLog(@"error: %@", error.localizedDescription);
-        }
-    }
-}
 
 -(void)initResName{
     _resNames = @[@"Light3DPlugin",@"LightBodyPlugin",@"LightCore",
@@ -197,6 +211,56 @@ static XmagicApiManager *shareSingleton = nil;
         self.xMagicApi = nil;
         [self.lock unlock];
     }
+    [_processedMediaCache removeAllObjects];
+    _currentExportSession = nil;
+    _isBeautyProcessPaused = NO;
+    _needRefreshOnResume = NO;
+}
+
+// 清空所有缓存的待处理数据（包括effect、syncMode等）
+-(void)cleanPendingData{
+    [_saveEffectList removeAllObjects];
+    _pendingSyncMode = nil;
+    [_processedMediaCache removeAllObjects];
+    if (_currentExportSession && _currentExportSession.status == AVAssetExportSessionStatusExporting) {
+        [_currentExportSession cancelExport];
+    }
+    _currentExportSession = nil;
+    _isBeautyProcessPaused = NO;
+    _needRefreshOnResume = NO;
+    NSLog(@"cleanPendingData: all pending data cleared");
+}
+
+// 应用所有缓存的待处理数据（包括effect、syncMode等）
+-(void)applyPendingData{
+    if (_saveEffectList.count > 0) {
+        for (NSDictionary *dic in _saveEffectList) {
+            [self setEffect:dic];
+        }
+        [_saveEffectList removeAllObjects];
+    }
+    if (_pendingSyncMode != nil) {
+        BOOL isSync = [_pendingSyncMode[@"isSync"] boolValue];
+        int syncFrameCount = [_pendingSyncMode[@"syncFrameCount"] intValue];
+        [self.xMagicApi setSyncMode:isSync syncFrameCount:syncFrameCount];
+        _pendingSyncMode = nil;
+        NSLog(@"applyPendingData: applied syncMode, isSync=%d, syncFrameCount=%d", isSync, syncFrameCount);
+    }
+}
+
+// 设置同步模式（参照Android端实现，支持API未创建时缓存）
+-(void)setSyncMode:(BOOL)isSync syncFrameCount:(int)syncFrameCount{
+    if (self.xMagicApi == nil) {
+        NSLog(@"setSyncMode: xMagicApi is nil, caching syncMode data");
+        _pendingSyncMode = @{@"isSync": @(isSync), @"syncFrameCount": @(syncFrameCount)};
+        return;
+    }
+    [self.xMagicApi setSyncMode:isSync syncFrameCount:syncFrameCount];
+}
+
+// 设置美颜处理暂停状态：paused为YES时暂停美颜处理（展示原始画面），为NO时恢复美颜处理
+-(void)setBeautyProcessPaused:(BOOL)paused{
+    _isBeautyProcessPaused = paused;
 }
 
 //Determine which beauties (beauty and body) are supported by the current license authorization
@@ -266,6 +330,10 @@ static XmagicApiManager *shareSingleton = nil;
 //build sdk
 
 - (void)buildBeautySDK:(int)width and:(int)height{
+    
+    if(self.xmagicResPath ==nil){
+        NSLog(@"self.xmagicResPath please set resPath");
+    }
     NSDictionary *assetsDict = @{@"core_name":@"LightCore.bundle",
                                  @"root_path":self.xmagicResPath,
                                  @"effect_mode":@(self.effectMode)
@@ -276,11 +344,10 @@ static XmagicApiManager *shareSingleton = nil;
    [self.xMagicApi registerSDKEventListener:self];
    [self.xMagicApi registerLoggerListener:self withDefaultLevel:YT_SDK_ERROR_LEVEL];
     _makeup = @"";
-    if (!self.xmagicInit) {
-        for (NSDictionary *dic in _saveEffectList) {
-            [self setEffect:dic];
-        }
-        [_saveEffectList removeAllObjects];
+    // API创建后，应用所有缓存的待处理数据
+    [self applyPendingData];
+    if(_xmagicApiCreatedListener != nil) {
+        _xmagicApiCreatedListener();
     }
     NSLog(@"buildBeautySDK ,  xMagicApi create success");
 }
@@ -351,33 +418,57 @@ static XmagicApiManager *shareSingleton = nil;
 
 - (void)setEffect:(NSDictionary *)dic{
     if (self.xMagicApi == nil) {
-        _xmagicInit = NO;
         if (!_saveEffectList) {
             _saveEffectList = [NSMutableArray array];
         }
         [_saveEffectList addObject:dic];
         return;
     }
-    _xmagicInit = YES;
     NSString *effectName = dic[@"effectName"];
     int effectValue = [dic[@"effectValue"] intValue];
     NSString *resourcePath = dic[@"resourcePath"];
     NSDictionary *extraInfoDic = dic[@"extraInfo"];
     NSMutableDictionary *extraInfo = extraInfoDic.mutableCopy;
     if([extraInfo[@"bgType"] isEqualToString:@"0"] && ![extraInfo[@"bgPath"] hasSuffix:@".pag"]){
-        UIImage *image = [UIImage imageWithContentsOfFile:extraInfo[@"bgPath"]];
-        image = [self fixOrientation:image];
-        NSData *data = UIImagePNGRepresentation(image);
-        NSString *imagePath = [self createImagePath:@"image.png"];
-        [[NSFileManager defaultManager] createFileAtPath:imagePath contents:data attributes:nil];
-        extraInfo[@"bgPath"] = imagePath;
+        NSString *originalPath = extraInfo[@"bgPath"];
+        NSString *cachedPath = self.processedMediaCache[originalPath];
+        if (cachedPath && [[NSFileManager defaultManager] fileExistsAtPath:cachedPath]) {
+            // 命中缓存，直接使用已处理过的图片路径，跳过耗时的图片处理操作
+            extraInfo[@"bgPath"] = cachedPath;
+        } else {
+            // 未命中缓存，执行完整的图片处理流程
+            UIImage *image = [UIImage imageWithContentsOfFile:originalPath];
+            image = [self fixOrientation:image];
+            NSData *data = UIImagePNGRepresentation(image);
+            // 使用原始路径的 hash 生成唯一文件名，避免文件竞态覆盖
+            NSString *imagePath = [self createImagePath:
+                [NSString stringWithFormat:@"image_%lu.png", (unsigned long)originalPath.hash]];
+            [[NSFileManager defaultManager] createFileAtPath:imagePath contents:data attributes:nil];
+            extraInfo[@"bgPath"] = imagePath;
+            // 存入缓存
+            if (!self.processedMediaCache) {
+                self.processedMediaCache = [NSMutableDictionary dictionary];
+            }
+            self.processedMediaCache[originalPath] = imagePath;
+        }
     }else if ([extraInfo[@"bgType"] isEqualToString:@"1"]){
-        NSDateFormatter *formater = [[NSDateFormatter alloc] init];
-        [formater setDateFormat:@"yyyy-MM-dd-HH.mm.ss"];
-        NSURL *newVideoUrl = [NSURL fileURLWithPath:[NSHomeDirectory() stringByAppendingFormat:@"/Documents/output-%@.mp4", [formater stringFromDate:[NSDate date]]]];
-        AVURLAsset * asset = [AVURLAsset assetWithURL:[NSURL fileURLWithPath:extraInfo[@"bgPath"]]];
-        [self convertVideoQuailtyWithInputAVURLAsset:asset outputURL:newVideoUrl resPath:extraInfo[@"bgPath"] setEffect:YES paramDic:dic];
-        return;
+        NSString *originalVideoPath = extraInfo[@"bgPath"];
+        NSString *cachedVideoPath = self.processedMediaCache[originalVideoPath];
+        if (cachedVideoPath && [[NSFileManager defaultManager] fileExistsAtPath:cachedVideoPath]) {
+            // 命中缓存，直接使用已转码过的视频路径，跳过耗时的视频转码操作
+            extraInfo[@"bgPath"] = cachedVideoPath;
+        } else {
+            // 未命中缓存，取消前一次未完成的转码任务，启动新的转码
+            if (self.currentExportSession && self.currentExportSession.status == AVAssetExportSessionStatusExporting) {
+                [self.currentExportSession cancelExport];
+            }
+            NSDateFormatter *formater = [[NSDateFormatter alloc] init];
+            [formater setDateFormat:@"yyyy-MM-dd-HH.mm.ss.SSS"];
+            NSURL *newVideoUrl = [NSURL fileURLWithPath:[NSHomeDirectory() stringByAppendingFormat:@"/Documents/output-%@.mp4", [formater stringFromDate:[NSDate date]]]];
+            AVURLAsset * asset = [AVURLAsset assetWithURL:[NSURL fileURLWithPath:originalVideoPath]];
+            [self convertVideoQuailtyWithInputAVURLAsset:asset outputURL:newVideoUrl resPath:originalVideoPath setEffect:YES paramDic:dic];
+            return;
+        }
     }
     [self.xMagicApi setEffect:effectName effectValue:effectValue resourcePath:resourcePath extraInfo:extraInfo];
 }
@@ -463,6 +554,7 @@ static XmagicApiManager *shareSingleton = nil;
     exportSession.outputURL = outputURL;
     exportSession.outputFileType = AVFileTypeMPEG4;
     exportSession.shouldOptimizeForNetworkUse= YES;
+    self.currentExportSession = exportSession;
     [exportSession exportAsynchronouslyWithCompletionHandler:^(void) {
         switch (exportSession.status) {
             case AVAssetExportSessionStatusCancelled:
@@ -482,6 +574,12 @@ static XmagicApiManager *shareSingleton = nil;
                 if(setEffect){
                     NSDictionary *extraInfoDic = paramDic[@"extraInfo"];
                     NSMutableDictionary *extraInfo = extraInfoDic.mutableCopy;
+                    // 将转码结果存入缓存
+                    NSString *originalVideoPath = extraInfo[@"bgPath"];
+                    if (!self.processedMediaCache) {
+                        self.processedMediaCache = [NSMutableDictionary dictionary];
+                    }
+                    self.processedMediaCache[originalVideoPath] = outputURL.path;
                     extraInfo[@"bgPath"] = outputURL.path;
                     [self.xMagicApi setEffect:paramDic[@"effectName"] effectValue:paramDic[@"effectValue"] resourcePath:paramDic[@"resourcePath"] extraInfo:extraInfo];
                 }else{
@@ -510,6 +608,13 @@ static XmagicApiManager *shareSingleton = nil;
         self.heightF = srcFrame.height;
         self.widthF = srcFrame.width;
     }
+    // 美颜处理暂停模式：跳过美颜处理，直接返回原始纹理
+    if (self.isBeautyProcessPaused) {
+        NSLog(@"getTextureId: isBeautyProcessPaused is YES");
+        self.needRefreshOnResume = YES;
+        [self.lock unlock];
+        return srcFrame.textureId;
+    }
     if(self.xMagicApi!=nil && (self.heightF != srcFrame.height || self.widthF != srcFrame.width)){
         [self.xMagicApi setRenderSize:CGSizeMake(srcFrame.width, srcFrame.height)];
         self.heightF = srcFrame.height;
@@ -521,6 +626,11 @@ static XmagicApiManager *shareSingleton = nil;
     input.textureData.textureWidth = srcFrame.width;
     input.textureData.textureHeight = srcFrame.height;
     input.dataType = kYTTextureData;
+    // 恢复美颜时额外执行一次process，避免画面闪烁
+    if (self.needRefreshOnResume) {
+        self.needRefreshOnResume = NO;
+        [self.xMagicApi process:input withOrigin:YtLightImageOriginTopLeft withOrientation:YtLightCameraRotation0];
+    }
     YTProcessOutput *output = [self.xMagicApi process:input withOrigin:YtLightImageOriginTopLeft withOrientation:YtLightCameraRotation0];
     [self.lock unlock];
     return output.textureData.texture;
